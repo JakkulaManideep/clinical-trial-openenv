@@ -96,3 +96,17 @@ async def root() -> dict[str, str]:
         "service": "clinical_trial_env",
         "message": "Clinical Trial Protocol Review Environment",
     }
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run(
+        "clinical_trial_env.server.app:app",
+        host="0.0.0.0",
+        port=8000,
+    )
+
+
+if __name__ == "__main__":
+    main()

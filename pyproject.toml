@@ -24,6 +24,9 @@ dev = [
     "pytest>=8.2.0",
 ]
 
+[project.scripts]
+server = "clinical_trial_env.server.app:main"
+
 [tool.setuptools]
 packages = ["clinical_trial_env", "clinical_trial_env.server"]
 
