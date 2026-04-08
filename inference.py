@@ -67,11 +67,12 @@ def log_step(
 def log_end(
     success: bool,
     steps: int,
+    score: float,
     rewards: list[float],
 ) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -459,6 +460,7 @@ def run_task_with_logging(
         log_end(
             success=success,
             steps=steps_taken,
+            score=final_score,
             rewards=rewards,
         )
 
