@@ -64,7 +64,7 @@ python inference.py
 |---|---|---|
 | `API_BASE_URL` | `https://router.huggingface.co/v1` | OpenAI-compatible inference endpoint |
 | `API_KEY` | required for evaluator runs | Credential used for proxy-tracked OpenAI-compatible requests |
-| `MODEL_NAME` | `gpt-4o-mini` | Model used by `inference.py` |
+| `MODEL_NAME` | `Qwen/Qwen2.5-72B-Instruct` | Model used by `inference.py` |
 | `HF_TOKEN` | empty | Optional local manual fallback credential when `API_KEY` is absent |
 | `LOCAL_IMAGE_NAME` | empty | Optional local image/model selector for alternative runner setups |
 
