@@ -35,6 +35,7 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 BENCHMARK = "clinical_trial_env"
 SUCCESS_THRESHOLD = 0.5
+LLM_API_CALL_ATTEMPTS = 0
 
 
 def _print_stderr(*args: object, end: str | None = None) -> None:
@@ -333,10 +334,12 @@ def _to_action(data: dict) -> ClinicalTrialAction:
 
 
 def _call_llm(client: object | None, obs: dict) -> ClinicalTrialAction:
+    global LLM_API_CALL_ATTEMPTS
     user_prompt = build_user_prompt(obs)
     if API_KEY:
         if client is None:
             raise RuntimeError("OpenAI client unavailable for evaluator API_KEY path")
+        LLM_API_CALL_ATTEMPTS += 1
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -353,6 +356,7 @@ def _call_llm(client: object | None, obs: dict) -> ClinicalTrialAction:
 
     if HF_TOKEN and client is not None:
         try:
+            LLM_API_CALL_ATTEMPTS += 1
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
@@ -485,6 +489,8 @@ def run_baseline() -> int:
         text=True,
     )
     client = None
+    global LLM_API_CALL_ATTEMPTS
+    LLM_API_CALL_ATTEMPTS = 0
     if OpenAI is not None and API_KEY:
         client = OpenAI(
             base_url=API_BASE_URL,
@@ -492,6 +498,9 @@ def run_baseline() -> int:
             max_retries=0,
             timeout=25,
         )
+    elif API_KEY:
+        _print_stderr("OpenAI client unavailable for evaluator API_KEY path.")
+        return 1
     elif OpenAI is not None and HF_TOKEN:
         client = OpenAI(
             base_url=API_BASE_URL,
@@ -514,6 +523,10 @@ def run_baseline() -> int:
         scores: dict[str, float] = {}
         for task in ["easy", "medium", "hard"]:
             scores[task] = run_task_with_logging(task=task, seed=42, client=client)
+
+        if API_KEY and LLM_API_CALL_ATTEMPTS == 0:
+            _print_stderr("No LLM proxy calls were attempted.")
+            return 1
 
         easy_score = scores.get("easy", 0.0)
         medium_score = scores.get("medium", 0.0)
