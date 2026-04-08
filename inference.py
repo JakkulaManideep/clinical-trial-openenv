@@ -376,6 +376,22 @@ def _call_llm(client: object | None, obs: dict) -> ClinicalTrialAction:
     return _build_heuristic_action(obs, reason="missing_api_key")
 
 
+def _warm_up_proxy(client: object | None) -> None:
+    global LLM_API_CALL_ATTEMPTS
+    if not API_KEY:
+        return
+    if client is None:
+        raise RuntimeError("OpenAI client unavailable for evaluator API_KEY path")
+    LLM_API_CALL_ATTEMPTS += 1
+    client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": 'Return JSON: {"ok": true}'}],
+        temperature=0,
+        max_tokens=16,
+        stream=False,
+    )
+
+
 def _wait_for_server(proc: subprocess.Popen[str]) -> bool:
     _print_stderr("Waiting for server health", end="")
     for _ in range(60):
@@ -519,6 +535,13 @@ def run_baseline() -> int:
             if stderr_text.strip():
                 _print_stderr(stderr_text)
             return 1
+
+        if API_KEY:
+            try:
+                _warm_up_proxy(client)
+            except Exception as exc:
+                _print_stderr(f"LLM proxy warmup failed: {exc}")
+                return 1
 
         scores: dict[str, float] = {}
         for task in ["easy", "medium", "hard"]:
