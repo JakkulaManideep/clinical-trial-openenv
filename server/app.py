@@ -87,3 +87,12 @@ app = create_app(
     env_name="clinical_trial_env",
     gradio_builder=_gradio_builder,
 )
+
+
+@app.get("/")
+async def root() -> dict[str, str]:
+    return {
+        "status": "ok",
+        "service": "clinical_trial_env",
+        "message": "Clinical Trial Protocol Review Environment",
+    }
