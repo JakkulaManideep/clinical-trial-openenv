@@ -238,7 +238,7 @@ def test_headroom_reward_formula_reaches_one_for_perfect_easy_agent():
     env.step(ClinicalTrialAction(action_type="flag_violation", violation_flags=flags))
     obs = env.step(ClinicalTrialAction(action_type="accept_protocol", violation_flags=[]))
     assert obs.episode_done is True
-    assert abs(obs.cumulative_reward - 1.0) < 1e-6
+    assert 0.999 <= obs.cumulative_reward < 1.0
 
 
 def test_perfect_medium_agent_scores_at_least_ninety_five():

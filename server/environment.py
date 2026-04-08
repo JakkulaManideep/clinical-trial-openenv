@@ -249,7 +249,8 @@ class ClinicalTrialEnvironment(Environment):
                 "round": self._round,
             }
 
-        self._cumulative_reward = max(0.0, min(1.0, self._cumulative_reward + step_reward))
+        final_score_cap = 0.999 if self._done else 1.0
+        self._cumulative_reward = max(0.0, min(final_score_cap, self._cumulative_reward + step_reward))
         if self._done and "episode_summary" in info:
             info["episode_summary"]["final_grader_score"] = self._cumulative_reward
             info["reward_breakdown"] = self._last_reward_components
