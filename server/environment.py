@@ -409,6 +409,10 @@ class ClinicalTrialEnvironment(Environment):
         if self._protocol is None:
             raise RuntimeError("Protocol is not initialized.")
         bounded_step_reward = max(0.0, min(1.0, step_reward))
+        reported_cumulative_reward = max(
+            STRICT_SCORE_EPSILON,
+            min(1.0 - STRICT_SCORE_EPSILON, round(self._cumulative_reward, 4)),
+        )
         protocol_text = self._protocol.full_text
         if self._difficulty_modifier < 1.0:
             for section in self._protocol.sections:
@@ -448,7 +452,7 @@ class ClinicalTrialEnvironment(Environment):
             protocol_text=protocol_text,
             available_actions=self.TASK_ACTIONS.get(self._task, ["flag_violation"]),
             reviewer_feedback=self._reviewer_feedback,
-            cumulative_reward=min(1.0 - STRICT_SCORE_EPSILON, round(self._cumulative_reward, 4)),
+            cumulative_reward=reported_cumulative_reward,
             violations_found_so_far=violations_found,
             negotiation_round=self._round,
             calibration_hint=hint,
