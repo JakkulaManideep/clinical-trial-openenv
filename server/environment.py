@@ -101,7 +101,7 @@ class ClinicalTrialEnvironment(Environment):
         # This creates smooth difficulty curves for RL training
         self._difficulty_modifier = 0.85 if (actual_seed % 2 == 1) else 1.0
         self._current_step = 0
-        self._cumulative_reward = 0.0
+        self._cumulative_reward = STRICT_SCORE_EPSILON
         self._done = False
         self._all_flags = []
         self._round1_flags = []
