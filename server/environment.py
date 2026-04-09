@@ -404,6 +404,7 @@ class ClinicalTrialEnvironment(Environment):
     def _make_observation(self, step_reward: float) -> ClinicalTrialObservation:
         if self._protocol is None:
             raise RuntimeError("Protocol is not initialized.")
+        bounded_step_reward = max(0.0, min(1.0, step_reward))
         protocol_text = self._protocol.full_text
         if self._difficulty_modifier < 1.0:
             for section in self._protocol.sections:
@@ -448,7 +449,7 @@ class ClinicalTrialEnvironment(Environment):
             negotiation_round=self._round,
             calibration_hint=hint,
             episode_done=self._done,
-            reward=step_reward,
+            reward=bounded_step_reward,
         )
 
     @property
