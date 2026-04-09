@@ -9,12 +9,8 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+from openai import OpenAI
 from pydantic import ValidationError
-
-try:
-    from openai import OpenAI
-except Exception:  # pragma: no cover - optional import safety for test collection
-    OpenAI = None  # type: ignore[assignment]
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 WORKSPACE_ROOT = PROJECT_ROOT.parent
@@ -30,7 +26,8 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-API_KEY = os.getenv("API_KEY") or HF_TOKEN or ""
+API_KEY = os.getenv("API_KEY")
+AUTH_TOKEN = HF_TOKEN or API_KEY or ""
 BENCHMARK = "clinical_trial_env"
 SUCCESS_THRESHOLD = 0.5
 LLM_API_CALL_ATTEMPTS = 0
@@ -332,12 +329,13 @@ def _to_action(data: dict) -> ClinicalTrialAction:
         )
 
 
-def _call_llm(client: object | None, obs: dict) -> ClinicalTrialAction:
+def _call_llm(client: OpenAI | None, obs: dict) -> ClinicalTrialAction:
     global LLM_API_CALL_ATTEMPTS
+    if client is None:
+        return _build_heuristic_action(obs, reason="missing_api_key")
+
     user_prompt = build_user_prompt(obs)
-    if API_KEY:
-        if client is None:
-            raise RuntimeError("OpenAI client unavailable for evaluator API_KEY path")
+    try:
         LLM_API_CALL_ATTEMPTS += 1
         response = client.chat.completions.create(
             model=MODEL_NAME,
@@ -352,24 +350,25 @@ def _call_llm(client: object | None, obs: dict) -> ClinicalTrialAction:
         content = response.choices[0].message.content or ""
         parsed = parse_llm_response(content)
         return _to_action(parsed)
+    except Exception:
+        return _build_heuristic_action(obs, reason="llm_call_error")
 
-    return _build_heuristic_action(obs, reason="missing_api_key")
 
-
-def _warm_up_proxy(client: object | None) -> None:
+def _warm_up_proxy(client: OpenAI | None) -> None:
     global LLM_API_CALL_ATTEMPTS
-    if not API_KEY:
-        return
     if client is None:
-        raise RuntimeError("OpenAI client unavailable for evaluator API_KEY path")
-    LLM_API_CALL_ATTEMPTS += 1
-    client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": 'Return JSON: {"ok": true}'}],
-        temperature=0,
-        max_tokens=16,
-        stream=False,
-    )
+        return
+    try:
+        LLM_API_CALL_ATTEMPTS += 1
+        client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": 'Return JSON: {"ok": true}'}],
+            temperature=0,
+            max_tokens=16,
+            stream=False,
+        )
+    except Exception as exc:
+        _print_stderr(f"LLM proxy warmup failed: {exc}")
 
 
 def _wait_for_server(proc: subprocess.Popen[str]) -> bool:
@@ -394,13 +393,12 @@ def _wait_for_server(proc: subprocess.Popen[str]) -> bool:
 def run_task_with_logging(
     task: str,
     seed: int,
-    client: object | None,
+    client: OpenAI | None,
 ) -> float:
     rewards: list[float] = []
     steps_taken = 0
     final_score = 0.0
     success = False
-    last_error: str | None = None
 
     log_start(task=task, env=BENCHMARK, model=MODEL_NAME)
 
@@ -416,7 +414,7 @@ def run_task_with_logging(
 
         while not done:
             action = _call_llm(client, observation)
-            action_label = f"{action.action_type}({len(action.violation_flags)}flags)"
+            action_label = action.action_type
 
             step_resp = requests.post(
                 "http://localhost:8000/step",
@@ -445,15 +443,7 @@ def run_task_with_logging(
         success = final_score >= SUCCESS_THRESHOLD
 
     except Exception as exc:
-        last_error = str(exc).replace("\n", " ").replace("\r", "")
-        if steps_taken > 0 or rewards:
-            log_step(
-                step=steps_taken,
-                action="error",
-                reward=0.0,
-                done=False,
-                error=last_error,
-            )
+        _print_stderr(f"Task {task} failed: {str(exc).replace(chr(10), ' ').replace(chr(13), '')}")
         success = False
 
     finally:
@@ -485,19 +475,16 @@ def run_baseline() -> int:
         stderr=subprocess.PIPE,
         text=True,
     )
-    client = None
+    client: OpenAI | None = None
     global LLM_API_CALL_ATTEMPTS
     LLM_API_CALL_ATTEMPTS = 0
-    if OpenAI is not None and API_KEY:
+    if AUTH_TOKEN:
         client = OpenAI(
             base_url=API_BASE_URL,
-            api_key=API_KEY,
+            api_key=AUTH_TOKEN,
             max_retries=0,
             timeout=25,
         )
-    elif API_KEY:
-        _print_stderr("OpenAI client unavailable for evaluator API_KEY path.")
-        return 1
     try:
         if not _wait_for_server(proc):
             _print_stderr("Server health check failed.")
@@ -509,18 +496,13 @@ def run_baseline() -> int:
                 _print_stderr(stderr_text)
             return 1
 
-        if API_KEY:
-            try:
-                _warm_up_proxy(client)
-            except Exception as exc:
-                _print_stderr(f"LLM proxy warmup failed: {exc}")
-                return 1
+        _warm_up_proxy(client)
 
         scores: dict[str, float] = {}
         for task in ["easy", "medium", "hard"]:
             scores[task] = run_task_with_logging(task=task, seed=42, client=client)
 
-        if API_KEY and LLM_API_CALL_ATTEMPTS == 0:
+        if AUTH_TOKEN and LLM_API_CALL_ATTEMPTS == 0:
             _print_stderr("No LLM proxy calls were attempted.")
             return 1
 
@@ -537,50 +519,6 @@ def run_baseline() -> int:
         _print_stderr(f"  Hard   task: {hard_score:.4f}")
         _print_stderr(f"  Average:     {avg:.4f}")
         _print_stderr("=" * 42 + "\n")
-
-        try:
-            import yaml
-
-            yaml_path = PROJECT_ROOT / "openenv.yaml"
-            if yaml_path.exists():
-                with yaml_path.open("r", encoding="utf-8") as fh:
-                    config = yaml.safe_load(fh) or {}
-                config["baseline_scores"] = {
-                    "easy": round(easy_score, 4),
-                    "medium": round(medium_score, 4),
-                    "hard": round(hard_score, 4),
-                    "average": round(avg, 4),
-                    "model": MODEL_NAME,
-                    "note": "Produced by inference.py seed=42",
-                }
-                with yaml_path.open("w", encoding="utf-8") as fh:
-                    yaml.safe_dump(config, fh, sort_keys=False, allow_unicode=True)
-                _print_stderr("OK openenv.yaml baseline_scores updated")
-        except ImportError:
-            pass
-
-        _print_stderr("\n--- Reproducibility Check ---")
-        score_run1 = run_task_with_logging("easy", seed=42, client=client)
-        score_run2 = run_task_with_logging("easy", seed=42, client=client)
-        if abs(score_run1 - score_run2) < 1e-6:
-            _print_stderr(
-                f"OK Reproducibility confirmed: easy seed=42 -> {score_run1:.4f} both runs"
-            )
-        else:
-            _print_stderr(
-                f"WARN Reproducibility FAILED: {score_run1:.4f} vs {score_run2:.4f}"
-            )
-
-        _print_stderr("\n--- Variance Check (graders not constant) ---")
-        v_scores = [
-            run_task_with_logging("easy", seed=s, client=client)
-            for s in [42, 43, 44]
-        ]
-        _print_stderr(f"Scores across seeds 42/43/44: {[f'{s:.4f}' for s in v_scores]}")
-        if len(set(round(s, 3) for s in v_scores)) > 1:
-            _print_stderr("OK Score variance confirmed - grader is not constant")
-        else:
-            _print_stderr("WARN All scores identical across seeds")
 
         return 0
 

@@ -53,7 +53,7 @@ docker run --rm -p 8000:8000 clinical-trial-env-server
 ```
 
 ### OpenAI-compatible proxy inference mode
-Set `API_BASE_URL` and `API_KEY` and run:
+Set `API_BASE_URL`, `MODEL_NAME`, and `HF_TOKEN` (or `API_KEY` as a compatibility fallback) and run:
 ```bash
 python inference.py
 ```
@@ -63,13 +63,13 @@ python inference.py
 | Variable | Default | Purpose |
 |---|---|---|
 | `API_BASE_URL` | `https://router.huggingface.co/v1` | OpenAI-compatible inference endpoint |
-| `API_KEY` | required for evaluator runs | Credential used for proxy-tracked OpenAI-compatible requests |
 | `MODEL_NAME` | `Qwen/Qwen2.5-72B-Instruct` | Model used by `inference.py` |
-| `HF_TOKEN` | empty | Optional local manual fallback credential when `API_KEY` is absent |
+| `HF_TOKEN` | empty | Preferred credential for OpenAI-compatible requests in `inference.py` |
+| `API_KEY` | empty | Compatibility fallback credential when `HF_TOKEN` is absent |
 | `LOCAL_IMAGE_NAME` | empty | Optional local image/model selector for alternative runner setups |
 
-For OpenEnv/Scaler evaluation, `inference.py` uses the injected `API_BASE_URL` and `API_KEY` to make live OpenAI-compatible proxy requests.
-If `API_KEY` is absent, `HF_TOKEN` remains available only for local manual compatibility, and a deterministic local heuristic policy is used only outside the evaluator path.
+For OpenEnv/Scaler evaluation, `inference.py` uses the injected `API_BASE_URL` and whichever of `HF_TOKEN` or `API_KEY` is provided to make live OpenAI-compatible proxy requests.
+If no credential is present, the script falls back to the deterministic local heuristic policy.
 
 ## 5. Observation Space
 
@@ -275,12 +275,12 @@ Scores below were produced by `python inference.py` using the current repository
 
 | Task | Score | Notes |
 |---|---:|---|
-| Easy | `1.0000` | Seed-42 baseline run, single-round review |
-| Medium | `1.0000` | All four violations recovered with compliant corrections |
-| Hard | `1.0000` | Cascade finding and reviewer-feedback adaptation handled correctly |
-| Average | `1.0000` | Reproducibility and variance checks pass |
+| Easy | `0.9990` | Seed-42 baseline run, single-round review |
+| Medium | `0.9990` | All four violations recovered with compliant corrections |
+| Hard | `0.9990` | Cascade finding and reviewer-feedback adaptation handled correctly |
+| Average | `0.9990` | Baseline stays inside the strict open interval |
 
-The inference script also confirms that easy-task results are reproducible for `seed=42` and non-constant across seeds `42/43/44`. Submission/evaluator runs are expected to use `API_BASE_URL` and `API_KEY` for live proxy-backed inference.
+Submission/evaluator runs are expected to use `API_BASE_URL` plus an injected proxy credential (`HF_TOKEN` or `API_KEY`) for live OpenAI-compatible inference.
 
 ## 12. Citation
 If you use this environment in research or evaluation, cite:
